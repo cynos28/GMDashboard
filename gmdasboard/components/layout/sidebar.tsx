@@ -188,7 +188,7 @@ export function Sidebar({ className }: SidebarProps) {
       <div className="flex h-16 items-center justify-between border-b px-4">
         {!collapsed && (
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-purple-600">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-linear-to-br from-blue-500 to-purple-600">
               <Calculator className="h-5 w-5 text-white" />
             </div>
             <div className="flex flex-col">
@@ -227,7 +227,7 @@ export function Sidebar({ className }: SidebarProps) {
 
       <div className="p-4">
         {!collapsed && (
-          <div className="rounded-lg bg-gradient-to-br from-blue-50 to-purple-50 p-4 dark:from-blue-950 dark:to-purple-950">
+          <div className="rounded-lg bg-linear-to-br from-blue-50 to-purple-50 p-4 dark:from-blue-950 dark:to-purple-950">
             <p className="text-sm font-medium">Need Help?</p>
             <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
               Check our documentation or contact support
