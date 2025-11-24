@@ -1,245 +1,243 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Upload, FileText, Loader2, CheckCircle, XCircle } from 'lucide-react';
-
-interface UploadResponse {
-  id: string;
-  title: string;
-  grade_levels: number[];
-  topic: string;
-  status: string;
-  questions_count: number;
-}
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Upload, FileText, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { useDropzone } from 'react-dropzone';
 
 interface DocumentUploadProps {
-  onUploadSuccess?: (document: UploadResponse) => void;
+  onUploadSuccess?: () => void;
 }
 
 export default function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [gradeLevels, setGradeLevels] = useState<number[]>([1]);
-  const [topic, setTopic] = useState('Length');
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<UploadResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+  const [topic, setTopic] = useState('Length');
+  const [gradeLevel, setGradeLevel] = useState('1');
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
 
   const ragBase = process.env.NEXT_PUBLIC_RAG_API_URL || 'http://localhost:8000';
 
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles.length > 0) {
+      const uploadedFile = acceptedFiles[0];
+      setFile(uploadedFile);
+      // Auto-fill title from filename if empty
+      if (!title) {
+        setTitle(uploadedFile.name.replace(/\.[^/.]+$/, ''));
+      }
+      setStatus('idle');
+      setMessage('');
+    }
+  }, [title]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/plain': ['.txt'],
+    },
+    maxFiles: 1,
+  });
+
   const handleUpload = async () => {
     if (!file) {
-      setError('Please select a file');
+      setStatus('error');
+      setMessage('Please select a file');
       return;
     }
 
     setUploading(true);
-    setError(null);
-    setResult(null);
+    setStatus('idle');
+    setMessage('');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('grade_levels', gradeLevel);
+    formData.append('topic', topic);
+    formData.append('title', title || file.name);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('grade_levels', gradeLevels.join(','));
-      formData.append('topic', topic);
-      formData.append('uploaded_by', 'teacher_id_here'); // TODO: Get from auth context
-
-      const response = await fetch(`${ragBase}/upload/document`, {
+      const response = await fetch(`${ragBase}/api/v1/upload/`, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Upload failed: ${response.status} ${text}`);
+        const error = await response.json();
+        throw new Error(error.detail || 'Upload failed');
       }
 
-      const data: UploadResponse = await response.json();
-      setResult(data);
-
-      // Auto-generate questions
-      if (data.id) {
-        await generateQuestions(data.id);
-      }
-
+      const result = await response.json();
+      
+      setStatus('success');
+      setMessage(`Document "${result.title}" uploaded successfully!`);
+      
+      // Reset form
+      setFile(null);
+      setTitle('');
+      
+      // Notify parent component
       if (onUploadSuccess) {
-        onUploadSuccess(data);
+        onUploadSuccess();
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Upload failed');
     } finally {
       setUploading(false);
     }
   };
 
-  const generateQuestions = async (documentId: string) => {
-    try {
-      const response = await fetch(`${ragBase}/questions/generate/${documentId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          num_questions: 10,
-          grade_level: gradeLevels[0] || 1,
-          difficulty_levels: [1, 2, 3, 4, 5],
-        }),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        console.error('Question generation failed:', response.status, text);
-        return;
-      }
-
-      const data = await response.json();
-      console.log('Questions generated:', data);
-      
-      // Update result with new questions count
-      if (result) {
-        setResult({ ...result, questions_count: data.questions_generated || 0 });
-      }
-    } catch (err) {
-      console.error('Question generation failed:', err);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0] || null;
-    setFile(selectedFile);
-    setError(null);
-    setResult(null);
-  };
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Upload className="h-5 w-5" />
-          Upload Document
+    <Card className="shadow-sm">
+      <CardHeader className="pb-5 pt-6 px-6">
+        <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
+          <Upload className="h-6 w-6 text-neutral-700" />
+          Upload & Generate Questions
         </CardTitle>
-        <CardDescription>
-          Upload PDF, DOCX, or TXT files to generate adaptive questions
+        <CardDescription className="text-base sm:text-lg mt-2">
+          Upload learning materials to generate adaptive questions for students
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* File Input */}
-        <div className="space-y-3">
-          <Label htmlFor="file-upload" className="text-sm font-medium">Document File</Label>
-          <Input
-            id="file-upload"
-            type="file"
-            accept=".pdf,.docx,.txt"
-            onChange={handleFileChange}
-            disabled={uploading}
-            className="cursor-pointer"
-          />
-          {file && (
-            <div className="flex items-center gap-2 text-sm text-neutral-600 bg-neutral-50 rounded-md p-3">
-              <FileText className="h-4 w-4 text-blue-600" />
-              <span className="truncate">{file.name}</span>
+      <CardContent className="pt-4 px-6 pb-6 space-y-6">
+        {/* File Drop Zone */}
+        <div
+          {...getRootProps()}
+          className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all ${
+            isDragActive
+              ? 'border-blue-500 bg-blue-50'
+              : file
+              ? 'border-green-500 bg-green-50'
+              : 'border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50'
+          }`}
+        >
+          <input {...getInputProps()} />
+          {file ? (
+            <div className="flex flex-col items-center gap-3">
+              <FileText className="h-12 w-12 text-green-600" />
+              <div>
+                <p className="font-medium text-neutral-900">{file.name}</p>
+                <p className="text-sm text-neutral-500 mt-1">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFile(null);
+                }}
+              >
+                Change File
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <Upload className="h-12 w-12 text-neutral-400" />
+              <div>
+                <p className="font-medium text-neutral-900">
+                  {isDragActive ? 'Drop your file here' : 'Drop file or click to upload'}
+                </p>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Supports PDF, DOCX, TXT (Max 10MB)
+                </p>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Topic Selection */}
-        <div className="space-y-3">
-          <Label htmlFor="topic-select" className="text-sm font-medium">Topic</Label>
-          <Select value={topic} onValueChange={setTopic} disabled={uploading}>
-            <SelectTrigger id="topic-select">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Length">Length (cm, m, km)</SelectItem>
-              <SelectItem value="Area">Area (cm², m²)</SelectItem>
-              <SelectItem value="Capacity">Capacity (ml, l)</SelectItem>
-              <SelectItem value="Weight">Weight (g, kg)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Form Fields */}
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="title">Document Title</Label>
+            <Input
+              id="title"
+              placeholder="e.g., Length Measurement Guide"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
 
-        {/* Grade Level Selection */}
-        <div className="space-y-3">
-          <Label className="text-sm font-medium">Grade Levels</Label>
-          <div className="flex flex-wrap gap-3">
-            {[1, 2, 3, 4, 5].map((grade) => (
-              <Badge
-                key={grade}
-                variant={gradeLevels.includes(grade) ? 'default' : 'outline'}
-                className="cursor-pointer select-none px-4 py-2 text-sm transition-all hover:scale-105"
-                onClick={() => {
-                  if (uploading) return;
-                  if (gradeLevels.includes(grade)) {
-                    setGradeLevels(gradeLevels.filter((g) => g !== grade));
-                  } else {
-                    setGradeLevels([...gradeLevels, grade]);
-                  }
-                }}
-              >
-                Grade {grade}
-              </Badge>
-            ))}
+          <div className="space-y-2">
+            <Label htmlFor="topic">Topic</Label>
+            <Select value={topic} onValueChange={setTopic}>
+              <SelectTrigger id="topic">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Length">Length</SelectItem>
+                <SelectItem value="Area">Area</SelectItem>
+                <SelectItem value="Capacity">Capacity</SelectItem>
+                <SelectItem value="Weight">Weight</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="grade">Grade Levels</Label>
+            <Select value={gradeLevel} onValueChange={setGradeLevel}>
+              <SelectTrigger id="grade">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Grade 1</SelectItem>
+                <SelectItem value="1,2">Grades 1-2</SelectItem>
+                <SelectItem value="1,2,3">Grades 1-3</SelectItem>
+                <SelectItem value="1,2,3,4">Grades 1-4 (All)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
+
+        {/* Status Messages */}
+        {status === 'success' && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4 flex items-start gap-3">
+            <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-medium text-green-900">Upload Successful</p>
+              <p className="text-sm text-green-700 mt-1">{message}</p>
+            </div>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-start gap-3">
+            <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-medium text-red-900">Upload Failed</p>
+              <p className="text-sm text-red-700 mt-1">{message}</p>
+            </div>
+          </div>
+        )}
 
         {/* Upload Button */}
-        <div className="pt-2">
-          <Button
-            onClick={handleUpload}
-            disabled={uploading || !file || gradeLevels.length === 0}
-            className="w-full gap-2 h-11"
-            size="lg"
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Uploading & Generating Questions...
-              </>
-            ) : (
-              <>
-                <Upload className="h-4 w-4" />
-                Upload & Generate Questions
-              </>
-            )}
-          </Button>
-        </div>
-
-        {/* Error Display */}
-        {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-            <XCircle className="h-5 w-5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-medium">Upload Failed</p>
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Success Display */}
-        {result && (
-          <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-4 text-green-700">
-            <CheckCircle className="h-5 w-5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-medium">Upload Successful!</p>
-              <div className="mt-2 space-y-1 text-sm">
-                <p>Document: {result.title}</p>
-                <p>Topic: {result.topic}</p>
-                <p>Status: {result.status}</p>
-                <p>Questions Generated: {result.questions_count}</p>
-                <p className="text-xs text-green-600">ID: {result.id}</p>
-              </div>
-            </div>
-          </div>
-        )}
+        <Button
+          onClick={handleUpload}
+          disabled={!file || uploading}
+          className="w-full h-12 text-base"
+          size="lg"
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            <>
+              <Upload className="mr-2 h-5 w-5" />
+              Upload Document
+            </>
+          )}
+        </Button>
       </CardContent>
     </Card>
   );

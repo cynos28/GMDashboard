@@ -5,6 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import DocumentUpload from '@/components/DocumentUpload';
 import { 
   FileText, 
@@ -17,7 +19,8 @@ import {
   Ruler,
   Square,
   Droplet,
-  Weight as WeightIcon
+  Weight as WeightIcon,
+  HelpCircle
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -32,11 +35,25 @@ interface Document {
   file_path: string;
 }
 
+interface Question {
+  id: string;
+  question_text: string;
+  options?: string[];
+  correct_answer: string;
+  explanation?: string;
+  difficulty_level: number;
+  grade_level: number;
+}
+
 export default function MeasurementPage() {
   const [activeTab, setActiveTab] = useState('length');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [showQuestionsDialog, setShowQuestionsDialog] = useState(false);
 
   const ragBase = process.env.NEXT_PUBLIC_RAG_API_URL || 'http://localhost:8000';
 
@@ -107,29 +124,52 @@ export default function MeasurementPage() {
     }
   };
 
+  const handleViewQuestions = async (doc: Document) => {
+    setSelectedDocument(doc);
+    setShowQuestionsDialog(true);
+    setLoadingQuestions(true);
+    setQuestions([]);
+
+    try {
+      const response = await fetch(`${ragBase}/questions/document/${doc.id}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch questions');
+      }
+
+      const data = await response.json();
+      setQuestions(data.questions || []);
+    } catch (err) {
+      console.error('Failed to load questions:', err);
+      setQuestions([]);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  };
+
   const getTopicColor = (topicId: string) => {
     const topic = topics.find(t => t.id === topicId);
     return topic?.color || 'neutral';
   };
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-10 pb-10 px-4 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold text-neutral-900">Measurement Domain</h1>
-        <p className="text-neutral-600 text-base">
+      <div className="space-y-3 pt-2">
+        <h1 className="text-3xl sm:text-4xl font-bold text-neutral-900">Measurement Domain</h1>
+        <p className="text-neutral-600 text-base sm:text-lg max-w-3xl">
           Upload documents and generate adaptive questions for measurement topics
         </p>
       </div>
 
       {/* Topic Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto p-1 gap-1">
+        <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 h-auto p-1.5 gap-2">
           {topics.map((topic) => {
             const Icon = topic.icon;
             return (
-              <TabsTrigger key={topic.id} value={topic.id} className="gap-2 py-3">
-                <Icon className="h-4 w-4" />
+              <TabsTrigger key={topic.id} value={topic.id} className="gap-2 py-3.5 text-sm sm:text-base">
+                <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                 <span className="hidden sm:inline">{topic.name}</span>
                 <span className="sm:hidden">{topic.name.substring(0, 3)}</span>
               </TabsTrigger>
@@ -140,115 +180,123 @@ export default function MeasurementPage() {
         {topics.map((topic) => {
           const Icon = topic.icon;
           return (
-            <TabsContent key={topic.id} value={topic.id} className="space-y-8 mt-8">
+            <TabsContent key={topic.id} value={topic.id} className="space-y-10 mt-10">
               {/* Topic Info Card */}
               <Card className={`border-l-4 border-${topic.color}-500 shadow-sm`}>
-                <CardHeader className="pb-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className={`p-2 rounded-lg bg-${topic.color}-50`}>
-                      <Icon className={`h-5 w-5 text-${topic.color}-600`} />
+                <CardHeader className="pb-5 pt-6 px-6">
+                  <CardTitle className="flex items-center gap-4 text-xl sm:text-2xl">
+                    <div className={`p-3 rounded-xl bg-${topic.color}-50`}>
+                      <Icon className={`h-6 w-6 sm:h-7 sm:w-7 text-${topic.color}-600`} />
                     </div>
                     {topic.name}
                   </CardTitle>
-                  <CardDescription className="text-base mt-2">
+                  <CardDescription className="text-base sm:text-lg mt-3">
                     Units: <span className="font-medium">{topic.units}</span> • Grade levels: <span className="font-medium">1-5</span>
                   </CardDescription>
                 </CardHeader>
               </Card>
 
               {/* Upload Section */}
-              <DocumentUpload onUploadSuccess={handleUploadSuccess} />
+              <div className="my-10">
+                <DocumentUpload onUploadSuccess={handleUploadSuccess} />
+              </div>
 
               {/* Documents List */}
               <Card className="shadow-sm">
-                <CardHeader className="pb-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <BookOpen className="h-5 w-5 text-neutral-700" />
+                <CardHeader className="pb-5 pt-6 px-6">
+                  <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
+                    <BookOpen className="h-6 w-6 text-neutral-700" />
                     Uploaded Documents ({documents.length})
                   </CardTitle>
-                  <CardDescription className="text-base mt-1">
+                  <CardDescription className="text-base sm:text-lg mt-2">
                     Documents and generated questions for {topic.name}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="pt-2">
+                <CardContent className="pt-4 px-6 pb-6">
                   {loading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+                    <div className="flex items-center justify-center py-16">
+                      <Loader2 className="h-10 w-10 animate-spin text-neutral-400" />
                     </div>
                   ) : error ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-                      <p className="font-medium">Error loading documents</p>
-                      <p className="text-sm">{error}</p>
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
+                      <p className="font-medium text-base">Error loading documents</p>
+                      <p className="text-sm mt-2">{error}</p>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={fetchDocuments}
-                        className="mt-2"
+                        className="mt-4"
                       >
                         Retry
                       </Button>
                     </div>
                   ) : documents.length === 0 ? (
-                    <div className="text-center py-16 text-neutral-500">
-                      <FileText className="h-16 w-16 mx-auto mb-4 text-neutral-300" />
-                      <p className="font-medium text-lg mb-1">No documents uploaded yet</p>
-                      <p className="text-sm text-neutral-400">Upload a document above to get started</p>
+                    <div className="text-center py-20 text-neutral-500">
+                      <FileText className="h-20 w-20 mx-auto mb-5 text-neutral-300" />
+                      <p className="font-medium text-xl mb-2">No documents uploaded yet</p>
+                      <p className="text-base text-neutral-400">Upload a document above to get started</p>
                     </div>
                   ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                       {documents.map((doc) => (
                         <div
                           key={doc.id}
-                          className="flex flex-col sm:flex-row items-start gap-4 rounded-lg border border-neutral-200 p-5 hover:bg-neutral-50 hover:border-neutral-300 transition-all hover:shadow-sm"
+                          className="flex flex-col lg:flex-row items-start gap-5 rounded-xl border border-neutral-200 p-6 hover:bg-neutral-50 hover:border-neutral-300 transition-all hover:shadow-md"
                         >
                           <div className="shrink-0">
-                            <div className="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center">
-                              <FileText className="h-6 w-6 text-blue-600" />
+                            <div className="h-14 w-14 rounded-xl bg-blue-100 flex items-center justify-center">
+                              <FileText className="h-7 w-7 text-blue-600" />
                             </div>
                           </div>
 
-                          <div className="flex-1 min-w-0 w-full">
-                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
-                              <h4 className="font-semibold text-neutral-900 text-base truncate">
+                          <div className="flex-1 min-w-0 w-full space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                              <h4 className="font-semibold text-neutral-900 text-lg">
                                 {doc.title}
                               </h4>
-                              <Badge variant={doc.status === 'processed' ? 'default' : 'outline'} className="self-start px-3 py-1">
+                              <Badge variant={doc.status === 'processed' ? 'default' : 'outline'} className="self-start px-4 py-1.5 text-sm">
                                 {doc.status}
                               </Badge>
                             </div>
 
-                            <div className="flex flex-wrap gap-x-3 gap-y-2 text-sm text-neutral-600">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
+                            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm sm:text-base text-neutral-600">
+                              <span className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4" />
                                 {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
                               </span>
-                              <span className="hidden sm:inline">•</span>
-                              <span>{doc.questions_count} questions</span>
-                              <span className="hidden sm:inline">•</span>
+                              <span className="hidden sm:inline text-neutral-300">•</span>
+                              <span className="font-medium">{doc.questions_count} questions</span>
+                              <span className="hidden sm:inline text-neutral-300">•</span>
                               <span>
                                 Grades: {doc.grade_levels.join(', ')}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0">
-                            <Button variant="outline" size="sm" title="View Details" className="gap-2">
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto justify-start lg:justify-end">
+                            <Button 
+                              variant="outline" 
+                              size="default" 
+                              title="View Questions" 
+                              className="gap-2 flex-1 sm:flex-initial"
+                              onClick={() => handleViewQuestions(doc)}
+                            >
                               <Eye className="h-4 w-4" />
-                              <span className="hidden sm:inline">View</span>
+                              <span>View Questions</span>
                             </Button>
-                            <Button variant="outline" size="sm" title="Download" className="gap-2">
+                            <Button variant="outline" size="default" title="Download" className="gap-2 flex-1 sm:flex-initial">
                               <Download className="h-4 w-4" />
-                              <span className="hidden sm:inline">Download</span>
+                              <span>Download</span>
                             </Button>
                             <Button
                               variant="outline"
-                              size="sm"
+                              size="default"
                               title="Delete"
                               onClick={() => handleDelete(doc.id)}
-                              className="gap-2 border-red-200 text-red-600 hover:bg-red-50"
+                              className="gap-2 flex-1 sm:flex-initial border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
                             >
                               <Trash2 className="h-4 w-4" />
-                              <span className="hidden sm:inline">Delete</span>
+                              <span>Delete</span>
                             </Button>
                           </div>
                         </div>
@@ -261,6 +309,107 @@ export default function MeasurementPage() {
           );
         })}
       </Tabs>
+
+      {/* Questions Dialog */}
+      <Dialog open={showQuestionsDialog} onOpenChange={setShowQuestionsDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-3">
+              <HelpCircle className="h-6 w-6 text-blue-600" />
+              Generated Questions
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              {selectedDocument?.title} • {questions.length} questions
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollArea className="h-[60vh] pr-4">
+            {loadingQuestions ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-10 w-10 animate-spin text-neutral-400" />
+              </div>
+            ) : questions.length === 0 ? (
+              <div className="text-center py-20 text-neutral-500">
+                <HelpCircle className="h-16 w-16 mx-auto mb-4 text-neutral-300" />
+                <p className="font-medium text-lg">No questions found</p>
+                <p className="text-sm text-neutral-400 mt-2">Questions may still be generating</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {questions.map((question, index) => (
+                  <Card key={question.id} className="shadow-sm">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <CardTitle className="text-lg font-semibold flex-1">
+                          <span className="text-blue-600 mr-2">Q{index + 1}.</span>
+                          {question.question_text}
+                        </CardTitle>
+                        <div className="flex gap-2 shrink-0">
+                          <Badge variant="outline" className="whitespace-nowrap">
+                            Grade {question.grade_level}
+                          </Badge>
+                          <Badge variant="outline" className="whitespace-nowrap">
+                            Level {question.difficulty_level}
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    
+                    {question.options && question.options.length > 0 && (
+                      <CardContent className="space-y-3">
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-neutral-700">Options:</p>
+                          <div className="grid gap-2">
+                            {question.options.map((option, optIndex) => (
+                              <div
+                                key={optIndex}
+                                className={`p-3 rounded-lg border ${
+                                  option === question.correct_answer
+                                    ? 'bg-green-50 border-green-300 text-green-900'
+                                    : 'bg-neutral-50 border-neutral-200'
+                                }`}
+                              >
+                                <span className="font-medium mr-2">{String.fromCharCode(65 + optIndex)}.</span>
+                                {option}
+                                {option === question.correct_answer && (
+                                  <Badge variant="default" className="ml-2 bg-green-600">Correct</Badge>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        {question.explanation && (
+                          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm font-medium text-blue-900 mb-1">Explanation:</p>
+                            <p className="text-sm text-blue-800">{question.explanation}</p>
+                          </div>
+                        )}
+                      </CardContent>
+                    )}
+                    
+                    {(!question.options || question.options.length === 0) && (
+                      <CardContent>
+                        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                          <p className="text-sm font-medium text-green-900 mb-1">Answer:</p>
+                          <p className="text-sm text-green-800 font-medium">{question.correct_answer}</p>
+                        </div>
+                        
+                        {question.explanation && (
+                          <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm font-medium text-blue-900 mb-1">Explanation:</p>
+                            <p className="text-sm text-blue-800">{question.explanation}</p>
+                          </div>
+                        )}
+                      </CardContent>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
