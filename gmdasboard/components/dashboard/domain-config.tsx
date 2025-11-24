@@ -71,27 +71,27 @@ export function DomainConfig({ title, description, strands, accentColor }: Domai
     }));
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-8 pb-8">
       {/* Page Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
-        <p className="mt-2 text-neutral-600 dark:text-neutral-400">{description}</p>
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold text-neutral-900">{title}</h1>
+        <p className="text-neutral-600 text-base">{description}</p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Configuration Panel */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-8">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${strands.length}, 1fr)` }}>
+            <TabsList className="grid w-full h-auto p-1 gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(strands.length, 4)}, 1fr)` }}>
               {strands.map((strand) => (
-                <TabsTrigger key={strand.name} value={strand.name}>
-                  {strand.name}
+                <TabsTrigger key={strand.name} value={strand.name} className="py-3 capitalize">
+                  {strand.name.replace(/-/g, ' ')}
                 </TabsTrigger>
               ))}
             </TabsList>
 
             {config.map((strand) => (
-              <TabsContent key={strand.name} value={strand.name} className="space-y-6">
+              <TabsContent key={strand.name} value={strand.name} className="space-y-8 mt-8">
                 {/* Unit Toggles */}
                 <Card>
                   <CardHeader>
@@ -129,17 +129,18 @@ export function DomainConfig({ title, description, strands, accentColor }: Domai
                       Adjust challenge level and support options
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-8 pt-2">
                     {/* Difficulty Presets */}
-                    <div>
-                      <Label>Difficulty Level</Label>
-                      <div className="mt-2 flex gap-2">
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Difficulty Level</Label>
+                      <div className="flex gap-3">
                         {(['easy', 'medium', 'hard'] as const).map((level) => (
                           <Button
                             key={level}
                             variant={strand.difficulty === level ? 'default' : 'outline'}
-                            size="sm"
+                            size="default"
                             onClick={() => updateStrand(strand.name, { difficulty: level })}
+                            className="flex-1"
                           >
                             {level.charAt(0).toUpperCase() + level.slice(1)}
                           </Button>
@@ -148,10 +149,10 @@ export function DomainConfig({ title, description, strands, accentColor }: Domai
                     </div>
 
                     {/* Tolerance Slider */}
-                    <div>
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <Label>Tolerance</Label>
-                        <Badge variant="outline">{strand.tolerance}%</Badge>
+                        <Label className="text-sm font-medium">Tolerance</Label>
+                        <Badge variant="outline" className="px-3 py-1">{strand.tolerance}%</Badge>
                       </div>
                       <Slider
                         value={[strand.tolerance]}
@@ -162,16 +163,16 @@ export function DomainConfig({ title, description, strands, accentColor }: Domai
                         step={1}
                         className="mt-2"
                       />
-                      <p className="mt-1 text-xs text-neutral-500">
+                      <p className="text-sm text-neutral-500">
                         Acceptable margin of error for measurements
                       </p>
                     </div>
 
                     {/* Hints Visibility */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label htmlFor={`hints-${strand.name}`}>Show Hints</Label>
-                        <p className="text-sm text-neutral-500">
+                    <div className="flex items-center justify-between p-4 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors">
+                      <div className="flex-1">
+                        <Label htmlFor={`hints-${strand.name}`} className="font-medium cursor-pointer">Show Hints</Label>
+                        <p className="text-sm text-neutral-500 mt-1">
                           Allow students to request help
                         </p>
                       </div>
@@ -187,21 +188,22 @@ export function DomainConfig({ title, description, strands, accentColor }: Domai
                 </Card>
 
                 {/* Save as Lesson Profile */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Save Configuration</CardTitle>
-                    <CardDescription>
+                <Card className="shadow-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-xl">Save Configuration</CardTitle>
+                    <CardDescription className="text-base mt-1">
                       Save these settings as a reusable lesson profile
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex gap-2">
+                  <CardContent className="pt-2">
+                    <div className="flex gap-3">
                       <Input
                         placeholder="Profile name (e.g., Week 1 - Length Basics)"
                         value={profileName}
                         onChange={(e) => setProfileName(e.target.value)}
+                        className="flex-1"
                       />
-                      <Button className="gap-2">
+                      <Button className="gap-2 px-6">
                         <Save className="h-4 w-4" />
                         Save
                       </Button>
@@ -214,27 +216,27 @@ export function DomainConfig({ title, description, strands, accentColor }: Domai
         </div>
 
         {/* Live Stats Sidebar */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Current Performance</CardTitle>
-              <CardDescription>
-                {currentStrand?.name || 'Select a strand'}
+        <div className="space-y-6 lg:space-y-8">
+          <Card className="shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl">Current Performance</CardTitle>
+              <CardDescription className="text-base mt-1 capitalize">
+                {currentStrand?.name.replace(/-/g, ' ') || 'Select a strand'}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-lg border p-4" style={{ borderLeftWidth: 4, borderLeftColor: accentColor }}>
-                <p className="text-3xl font-bold">
+            <CardContent className="space-y-4 pt-2">
+              <div className="rounded-lg border-l-4 border p-5 bg-neutral-50" style={{ borderLeftColor: accentColor }}>
+                <p className="text-4xl font-bold text-neutral-900">
                   {mockMasteryData.find((m) => m.strand === currentStrand?.name)?.averageAccuracy || 0}%
                 </p>
-                <p className="text-sm text-neutral-500">Current Class Accuracy</p>
+                <p className="text-sm text-neutral-600 mt-2">Current Class Accuracy</p>
               </div>
 
-              <div className="rounded-lg border p-4" style={{ borderLeftWidth: 4, borderLeftColor: accentColor }}>
-                <p className="text-3xl font-bold">
+              <div className="rounded-lg border-l-4 border p-5 bg-neutral-50" style={{ borderLeftColor: accentColor }}>
+                <p className="text-4xl font-bold text-neutral-900">
                   {mockMasteryData.find((m) => m.strand === currentStrand?.name)?.averageTimeOnTask || 0}s
                 </p>
-                <p className="text-sm text-neutral-500">Avg Time on Task</p>
+                <p className="text-sm text-neutral-600 mt-2">Avg Time on Task</p>
               </div>
             </CardContent>
           </Card>
@@ -245,12 +247,12 @@ export function DomainConfig({ title, description, strands, accentColor }: Domai
             </ChartCard>
           )}
 
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1 gap-2">
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 gap-2 h-11">
               <RotateCcw className="h-4 w-4" />
               Reset
             </Button>
-            <Button className="flex-1 gap-2" style={{ backgroundColor: accentColor }}>
+            <Button className="flex-1 gap-2 h-11" style={{ backgroundColor: accentColor }}>
               <Save className="h-4 w-4" />
               Apply
             </Button>
