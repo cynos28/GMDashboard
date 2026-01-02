@@ -10,7 +10,7 @@ import { Upload, FileText, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 
 interface DocumentUploadProps {
-  onUploadSuccess?: () => void;
+  onUploadSuccess?: (documentId?: string) => void;
 }
 
 export default function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
@@ -48,53 +48,53 @@ export default function DocumentUpload({ onUploadSuccess }: DocumentUploadProps)
   });
 
   const handleUpload = async () => {
-    if (!file) {
-      setStatus('error');
-      setMessage('Please select a file');
-      return;
+  if (!file) {
+    setStatus('error');
+    setMessage('Please select a file');
+    return;
+  }
+
+  setUploading(true);
+  setStatus('idle');
+  setMessage('');
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('grade_levels', gradeLevel);
+  formData.append('topic', topic);
+  formData.append('title', title || file.name);
+
+  try {
+    const response = await fetch(`${ragBase}/api/v1/upload/`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Upload failed');
     }
 
-    setUploading(true);
-    setStatus('idle');
-    setMessage('');
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('grade_levels', gradeLevel);
-    formData.append('topic', topic);
-    formData.append('title', title || file.name);
-
-    try {
-      const response = await fetch(`${ragBase}/api/v1/upload/`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Upload failed');
-      }
-
-      const result = await response.json();
-      
-      setStatus('success');
-      setMessage(`Document "${result.title}" uploaded successfully!`);
-      
-      // Reset form
-      setFile(null);
-      setTitle('');
-      
-      // Notify parent component
-      if (onUploadSuccess) {
-        onUploadSuccess();
-      }
-    } catch (error) {
-      setStatus('error');
-      setMessage(error instanceof Error ? error.message : 'Upload failed');
-    } finally {
-      setUploading(false);
+    const result = await response.json();
+    
+    setStatus('success');
+    setMessage(`Document "${result.title}" uploaded successfully! Questions are being generated...`);
+    
+    // Reset form
+    setFile(null);
+    setTitle('');
+    
+    // Pass document ID to parent for polling
+    if (onUploadSuccess) {
+      onUploadSuccess(result.id);
     }
-  };
+  } catch (error) {
+    setStatus('error');
+    setMessage(error instanceof Error ? error.message : 'Upload failed');
+  } finally {
+    setUploading(false);
+  }
+};
 
   return (
     <Card className="shadow-sm">

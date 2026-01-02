@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import DocumentUpload from '@/components/DocumentUpload';
 import { 
   FileText, 
@@ -20,7 +22,8 @@ import {
   Square,
   Droplet,
   Weight as WeightIcon,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -54,6 +57,9 @@ export default function MeasurementPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [showQuestionsDialog, setShowQuestionsDialog] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [questionsPerGrade, setQuestionsPerGrade] = useState('5');
 
   const ragBase = process.env.NEXT_PUBLIC_RAG_API_URL || 'http://localhost:8000';
 
@@ -73,7 +79,6 @@ export default function MeasurementPage() {
     setError(null);
 
     try {
-      // Fetch all documents, then filter by topic
       const response = await fetch(`${ragBase}/documents`);
       
       if (!response.ok) {
@@ -83,7 +88,6 @@ export default function MeasurementPage() {
       const data = await response.json();
       const allDocs = data.documents || [];
       
-      // Filter by current topic (case-insensitive)
       const topicName = topics.find(t => t.id === activeTab)?.name || '';
       const filtered = allDocs.filter((doc: Document) => 
         doc.topic.toLowerCase() === topicName.toLowerCase()
@@ -98,9 +102,48 @@ export default function MeasurementPage() {
     }
   };
 
-  const handleUploadSuccess = () => {
-    // Refresh the document list after successful upload
-    fetchDocuments();
+  const handleUploadSuccess = async (documentId?: string) => {
+    // Immediately refresh to show the new document
+    await fetchDocuments();
+    
+    // If documentId provided, poll for question generation completion
+    if (documentId) {
+      const maxAttempts = 40; // 40 * 3 seconds = 2 minutes
+      let attempts = 0;
+      
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        
+        try {
+          const response = await fetch(`${ragBase}/documents`);
+          
+          if (response.ok) {
+            const data = await response.json();
+            const allDocs = data.documents || [];
+            const uploadedDoc = allDocs.find((doc: Document) => doc.id === documentId);
+            
+            // If questions have been generated (count > 0), refresh and stop polling
+            if (uploadedDoc && uploadedDoc.questions_count > 0) {
+              const topicName = topics.find(t => t.id === activeTab)?.name || '';
+              const filtered = allDocs.filter((doc: Document) => 
+                doc.topic.toLowerCase() === topicName.toLowerCase()
+              );
+              setDocuments(filtered);
+              clearInterval(pollInterval);
+              return;
+            }
+          }
+        } catch (err) {
+          console.error('Error polling for upload updates:', err);
+        }
+        
+        // Stop after max attempts
+        if (attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          await fetchDocuments(); // Final refresh
+        }
+      }, 3000);
+    }
   };
 
   const handleDelete = async (docId: string) => {
@@ -117,7 +160,6 @@ export default function MeasurementPage() {
         throw new Error('Failed to delete document');
       }
 
-      // Refresh the list
       fetchDocuments();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete document');
@@ -138,7 +180,7 @@ export default function MeasurementPage() {
       }
 
       const data = await response.json();
-      setQuestions(data.questions || []);
+      setQuestions(data || []);
     } catch (err) {
       console.error('Failed to load questions:', err);
       setQuestions([]);
@@ -147,10 +189,87 @@ export default function MeasurementPage() {
     }
   };
 
-  const getTopicColor = (topicId: string) => {
-    const topic = topics.find(t => t.id === topicId);
-    return topic?.color || 'neutral';
+  const handleGenerateMore = (doc: Document) => {
+    setSelectedDocument(doc);
+    setShowGenerateDialog(true);
   };
+
+  const handleGenerateQuestions = async () => {
+  if (!selectedDocument) return;
+
+  setGenerating(true);
+  setShowGenerateDialog(false);
+
+  try {
+    const response = await fetch(`${ragBase}/api/v1/questions/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        document_id: selectedDocument.id,
+        grade_levels: selectedDocument.grade_levels,
+        questions_per_grade: parseInt(questionsPerGrade) || 5,
+        question_types: ['mcq', 'short_answer']
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to generate questions');
+    }
+
+    const expectedNewQuestions = parseInt(questionsPerGrade) * selectedDocument.grade_levels.length;
+    alert(`✅ Generating ${expectedNewQuestions} questions in background. The question count will update automatically.`);
+    
+    // Poll for updates every 3 seconds for up to 2 minutes
+    const maxAttempts = 40;
+    let attempts = 0;
+    const initialCount = selectedDocument.questions_count;
+    const docId = selectedDocument.id;
+    
+    const pollInterval = setInterval(async () => {
+      attempts++;
+      
+      try {
+        const response = await fetch(`${ragBase}/documents`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const allDocs = data.documents || [];
+          const updatedDoc = allDocs.find((doc: Document) => doc.id === docId);
+          
+          // Check if questions were added (count increased)
+          if (updatedDoc && updatedDoc.questions_count > initialCount) {
+            const topicName = topics.find(t => t.id === activeTab)?.name || '';
+            const filtered = allDocs.filter((doc: Document) => 
+              doc.topic.toLowerCase() === topicName.toLowerCase()
+            );
+            setDocuments(filtered);
+            clearInterval(pollInterval);
+            setGenerating(false);
+            
+            const addedQuestions = updatedDoc.questions_count - initialCount;
+            console.log(`✅ ${addedQuestions} new questions generated successfully`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Error polling for updates:', err);
+      }
+      
+      // Stop after max attempts and reset state
+      if (attempts >= maxAttempts) {
+        clearInterval(pollInterval);
+        setGenerating(false);
+        await fetchDocuments();
+        console.log('⏱️ Polling timeout reached');
+      }
+    }, 3000);
+    
+  } catch (err) {
+    alert(err instanceof Error ? err.message : 'Failed to generate questions');
+    setGenerating(false);
+  }
+};
 
   return (
     <div className="space-y-10 pb-10 px-4 sm:px-6 lg:px-8">
@@ -191,7 +310,7 @@ export default function MeasurementPage() {
                     {topic.name}
                   </CardTitle>
                   <CardDescription className="text-base sm:text-lg mt-3">
-                    Units: <span className="font-medium">{topic.units}</span> • Grade levels: <span className="font-medium">1-5</span>
+                    Units: <span className="font-medium">{topic.units}</span> • Grade levels: <span className="font-medium">1-4</span>
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -221,12 +340,7 @@ export default function MeasurementPage() {
                     <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
                       <p className="font-medium text-base">Error loading documents</p>
                       <p className="text-sm mt-2">{error}</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={fetchDocuments}
-                        className="mt-4"
-                      >
+                      <Button variant="outline" size="sm" onClick={fetchDocuments} className="mt-4">
                         Retry
                       </Button>
                     </div>
@@ -254,7 +368,7 @@ export default function MeasurementPage() {
                               <h4 className="font-semibold text-neutral-900 text-lg">
                                 {doc.title}
                               </h4>
-                              <Badge variant={doc.status === 'processed' ? 'default' : 'outline'} className="self-start px-4 py-1.5 text-sm">
+                              <Badge variant={doc.status === 'completed' ? 'default' : 'outline'} className="self-start px-4 py-1.5 text-sm">
                                 {doc.status}
                               </Badge>
                             </div>
@@ -267,31 +381,39 @@ export default function MeasurementPage() {
                               <span className="hidden sm:inline text-neutral-300">•</span>
                               <span className="font-medium">{doc.questions_count} questions</span>
                               <span className="hidden sm:inline text-neutral-300">•</span>
-                              <span>
-                                Grades: {doc.grade_levels.join(', ')}
-                              </span>
+                              <span>Grades: {doc.grade_levels.join(', ')}</span>
                             </div>
                           </div>
 
                           <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto justify-start lg:justify-end">
                             <Button 
                               variant="outline" 
-                              size="default" 
-                              title="View Questions" 
+                              size="default"
                               className="gap-2 flex-1 sm:flex-initial"
                               onClick={() => handleViewQuestions(doc)}
                             >
                               <Eye className="h-4 w-4" />
-                              <span>View Questions</span>
+                              <span>View</span>
                             </Button>
-                            <Button variant="outline" size="default" title="Download" className="gap-2 flex-1 sm:flex-initial">
-                              <Download className="h-4 w-4" />
-                              <span>Download</span>
+                            <Button 
+                              variant="default" 
+                              size="default"
+                              className="flex-1 sm:flex-initial bg-purple-600 hover:bg-purple-700"
+                              onClick={() => handleGenerateMore(doc)}
+                              disabled={generating}
+                            >
+                              {generating ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  Generating...
+                                </>
+                              ) : (
+                                'Generate More'
+                              )}
                             </Button>
                             <Button
                               variant="outline"
                               size="default"
-                              title="Delete"
                               onClick={() => handleDelete(doc.id)}
                               className="gap-2 flex-1 sm:flex-initial border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
                             >
@@ -309,6 +431,60 @@ export default function MeasurementPage() {
           );
         })}
       </Tabs>
+
+      {/* Generate More Questions Dialog */}
+      <Dialog open={showGenerateDialog} onOpenChange={setShowGenerateDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-3">
+              <Sparkles className="h-6 w-6 text-purple-600" />
+              Generate More Questions
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              {selectedDocument?.title}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="questions-count">Questions per grade level</Label>
+              <Input
+                id="questions-count"
+                type="number"
+                min="1"
+                max="20"
+                value={questionsPerGrade}
+                onChange={(e) => setQuestionsPerGrade(e.target.value)}
+                placeholder="5"
+              />
+              <p className="text-sm text-neutral-500">
+                Total: {(parseInt(questionsPerGrade) || 5) * (selectedDocument?.grade_levels.length || 1)} questions
+                ({selectedDocument?.grade_levels.length || 1} grade levels)
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setShowGenerateDialog(false)} className="flex-1">
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleGenerateQuestions} 
+                disabled={generating}
+                className="flex-1 bg-purple-600 hover:bg-purple-700"
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  'Generate'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Questions Dialog */}
       <Dialog open={showQuestionsDialog} onOpenChange={setShowQuestionsDialog}>
@@ -345,12 +521,8 @@ export default function MeasurementPage() {
                           {question.question_text}
                         </CardTitle>
                         <div className="flex gap-2 shrink-0">
-                          <Badge variant="outline" className="whitespace-nowrap">
-                            Grade {question.grade_level}
-                          </Badge>
-                          <Badge variant="outline" className="whitespace-nowrap">
-                            Level {question.difficulty_level}
-                          </Badge>
+                          <Badge variant="outline">Grade {question.grade_level}</Badge>
+                          <Badge variant="outline">Level {question.difficulty_level}</Badge>
                         </div>
                       </div>
                     </CardHeader>
